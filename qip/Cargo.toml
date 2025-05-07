@@ -1,6 +1,6 @@
 [package]
 name = "qip"
-version = "1.0.0-beta.1"
+version = "1.4.0"
 authors = ["Sumner Hearth <sumnernh@gmail.com>"]
 description = "A library for efficient quantum computing simulations."
 repository = "https://github.com/Renmusxd/RustQIP"
@@ -12,20 +12,23 @@ name = "qip"
 
 [features]
 default = ["parallel"]
-parallel = ["rayon"]
+parallel = ["rayon", "qip-iterators/parallel"]
 macros = ["qip-macros"]
 boolean_circuits = ["macros"]
-optimization = []
 
 [dependencies]
 num-rational = "^0.4"
 num-traits = "^0.2"
 num-complex = "^0.4"
-rayon = { version = "^1.6", optional = true }
+rayon = { version = "^1.7", optional = true }
 rand = "^0.8"
 smallvec = "^1.10"
 
 [dependencies.qip-macros]
+version = "1.0.0"
 path = "../qip-macros"
-version = "1.0.0-beta.0"
 optional = true
+
+[dependencies.qip-iterators]
+version = "1.4.0"
+path = "../qip-iterators"

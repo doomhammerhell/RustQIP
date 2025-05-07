@@ -1,14 +1,14 @@
 #![forbid(unsafe_code)]
 #![deny(
-unreachable_pub,
-missing_debug_implementations,
-missing_copy_implementations,
-trivial_casts,
-trivial_numeric_casts,
-unstable_features,
-unused_import_braces,
-unused_qualifications,
-missing_docs
+    unreachable_pub,
+    missing_debug_implementations,
+    missing_copy_implementations,
+    trivial_casts,
+    trivial_numeric_casts,
+    unstable_features,
+    unused_import_braces,
+    unused_qualifications,
+    missing_docs
 )]
 
 //! Quantum Computing library leveraging graph building to build efficient quantum circuit
@@ -249,13 +249,8 @@ pub mod inverter;
 /// Types for helping procedural macros.
 #[cfg(feature = "macros")]
 pub mod macros;
-/// Functions for optimizing circuits with monte carlo.
-#[cfg(feature = "optimization")]
-pub mod optimizer;
 /// Standard quantum fourier transform implementation.
 pub mod qfft;
-/// Helpers for converting from synchronous to parallel iterators.
-pub mod rayon_helper;
 /// Lower-level circuit operations.
 pub mod state_ops;
 /// Reusable types.
@@ -265,7 +260,7 @@ pub mod utils;
 
 pub use num_complex::Complex;
 pub use rand;
-pub use types::Precision;
+pub use types::*;
 
 /// Commonly used types and traits.
 /// ```

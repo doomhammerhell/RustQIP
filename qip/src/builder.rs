@@ -1,17 +1,20 @@
+use std::hash::{Hash, Hasher};
+use std::num::NonZeroUsize;
+use std::ops::Neg;
+
+use num_rational::{Ratio, Rational64};
+use num_traits::{One, ToPrimitive, Zero};
+use qip_iterators::matrix_ops::apply_op_overwrite;
+
 use crate::builder_traits::*;
 use crate::conditioning::{Conditionable, ConditionableSubcircuit};
 use crate::errors::{CircuitError, CircuitResult};
 use crate::inverter::Invertable;
 use crate::inverter::RecursiveCircuitBuilder;
-use crate::state_ops::matrix_ops::{apply_op, make_control_op, make_matrix_op, make_swap_op};
+use crate::state_ops::matrix_ops::{make_control_op, make_matrix_op, make_swap_op};
 use crate::state_ops::measurement_ops::{measure, measure_probs};
 use crate::types::Precision;
 use crate::Complex;
-use num_rational::{Ratio, Rational64};
-use num_traits::{One, ToPrimitive, Zero};
-use std::hash::{Hash, Hasher};
-use std::num::NonZeroUsize;
-use std::ops::Neg;
 
 /// A local circuit builder for constructing circuits out of standard gates.
 /// LocalBuilder breaks complicated multi-register gates, like toffoli, into combinations of simple
@@ -76,8 +79,8 @@ impl QubitRegister for Qudit {
 
 impl Qudit {
     fn new<It>(indices: It) -> Option<Self>
-        where
-            It: Into<Vec<usize>>,
+    where
+        It: Into<Vec<usize>>,
     {
         let indices = indices.into();
         if !indices.is_empty() {
@@ -87,8 +90,8 @@ impl Qudit {
         }
     }
     fn new_from_iter<It>(indices: It) -> Option<Self>
-        where
-            It: Iterator<Item=usize>,
+    where
+        It: Iterator<Item = usize>,
     {
         let indices = indices.into_iter().collect::<Vec<_>>();
         Self::new(indices)
@@ -324,7 +327,7 @@ impl<P: Precision> CircuitBuilder for LocalBuilder<P> {
     }
 
     fn merge_two_registers(&mut self, r1: Self::Register, r2: Self::Register) -> Self::Register {
-        Self::Register::new_from_iter(r1.indices.into_iter().chain(r2.indices.into_iter())).unwrap()
+        Self::Register::new_from_iter(r1.indices.into_iter().chain(r2.indices)).unwrap()
     }
 
     fn split_register_relative<It>(
@@ -332,8 +335,8 @@ impl<P: Precision> CircuitBuilder for LocalBuilder<P> {
         r: Self::Register,
         indices: It,
     ) -> SplitResult<Self::Register>
-        where
-            It: IntoIterator<Item=usize>,
+    where
+        It: IntoIterator<Item = usize>,
     {
         let selected_indices = indices.into_iter().filter_map(|i| {
             if i <= r.indices.len() {
@@ -369,7 +372,7 @@ impl<P: Precision> CircuitBuilder for LocalBuilder<P> {
                 let rs = self.split_all_register(r);
                 rs.iter()
                     .for_each(|r| self.pipeline.push((r.indices.clone(), c.clone())));
-                Ok(self.merge_registers(rs.into_iter()).unwrap())
+                Ok(self.merge_registers(rs).unwrap())
             } else {
                 // Normal application.
                 self.pipeline.push((r.indices.clone(), c));
@@ -383,9 +386,9 @@ impl<P: Precision> CircuitBuilder for LocalBuilder<P> {
     }
 
     fn calculate_state_with_init<'a, It>(&mut self, it: It) -> Self::StateCalculation
-        where
-            Self::Register: 'a,
-            It: IntoIterator<Item=(&'a Self::Register, usize)>,
+    where
+        Self::Register: 'a,
+        It: IntoIterator<Item = (&'a Self::Register, usize)>,
     {
         let n = self.n();
         let mut state = vec![Complex::zero(); 1 << n];
@@ -481,7 +484,7 @@ impl<P: Precision> CircuitBuilder for LocalBuilder<P> {
                                 }
                                 UnitaryMatrixObject::GlobalPhase(_) => unreachable!(),
                             }?;
-                            apply_op(n, &uop, &state, &mut arena, 0, 0);
+                            apply_op_overwrite(n, &uop, &state, &mut arena, 0, 0);
                         }
                         BuilderCircuitObjectType::Measurement(object) => match object {
                             MeasurementObject::Measurement => {
@@ -569,7 +572,7 @@ impl<P: Precision> TemporaryRegisterBuilder for LocalBuilder<P> {
 
     fn return_zeroed_temp_register(&mut self, r: Self::Register) {
         let rs = self.split_all_register(r);
-        self.zeroed_qubits.extend(rs.into_iter());
+        self.zeroed_qubits.extend(rs);
     }
 }
 
@@ -733,9 +736,7 @@ impl<P: Precision> Conditionable for LocalBuilder<P> {
                             Ok((cr, ras, rbs))
                         },
                     )?;
-                    let r = self
-                        .merge_registers(ras.into_iter().chain(rbs.into_iter()))
-                        .unwrap();
+                    let r = self.merge_registers(ras.into_iter().chain(rbs)).unwrap();
                     Ok((cr, r))
                 }
                 UnitaryMatrixObject::CNOT => {
@@ -866,9 +867,9 @@ fn apply_pipeline_objects<CB, CO>(
     sc: CB::Subcircuit,
     r: CB::Register,
 ) -> CircuitResult<CB::Register>
-    where
-        CB: CircuitBuilder<CircuitObject=CO>
-        + Subcircuitable<Subcircuit=Vec<(Vec<usize>, CO)>>
+where
+    CB: CircuitBuilder<CircuitObject = CO>
+        + Subcircuitable<Subcircuit = Vec<(Vec<usize>, CO)>>
         + TemporaryRegisterBuilder,
 {
     let rn = r.n();
@@ -881,7 +882,7 @@ fn apply_pipeline_objects<CB, CO>(
     // Need temp qubits for excess.
     if let Some(temp_n) = NonZeroUsize::new(1 + max_r_index - rn) {
         let temp = cb.make_zeroed_temp_register(temp_n);
-        rs.extend(cb.split_all_register(temp).into_iter());
+        rs.extend(cb.split_all_register(temp));
     }
     let mut rs = rs.into_iter().map(Some).collect::<Vec<_>>();
     sc.into_iter().try_for_each(|(indices, co)| {
@@ -903,7 +904,7 @@ fn apply_pipeline_objects<CB, CO>(
     if let Some(tr) = cb.merge_registers(trs) {
         cb.return_zeroed_temp_register(tr);
     }
-    let r = cb.merge_registers(rs.into_iter()).unwrap();
+    let r = cb.merge_registers(rs).unwrap();
     Ok(r)
 }
 
@@ -955,125 +956,4 @@ fn invert_circuit_object<P: Precision>(
 
 impl<P: Precision> RecursiveCircuitBuilder<P> for LocalBuilder<P> {
     type RecursiveSimilarBuilder = Self::SimilarBuilder;
-}
-
-/// Monte Carlo optimizer implementations.
-#[cfg(feature = "optimization")]
-pub mod optimizers {
-    use super::*;
-    use crate::optimizer::index_trie::IndexTrie;
-    use crate::optimizer::mc_optimizer::MonteCarloOptimizer;
-    use std::path::Path;
-
-    /// A Trie for circuit sequences.
-    pub type OptimizerTrie<P> = IndexTrie<
-        (Vec<usize>, BuilderCircuitObjectType<P>),
-        Vec<(Vec<usize>, BuilderCircuitObjectType<P>)>,
-    >;
-
-    impl<P: Precision> LocalBuilder<P> {
-        /// Map strings to circuit objects.
-        pub fn simple_map_strings(x: &str) -> CircuitResult<BuilderCircuitObjectType<P>> {
-            let res = match x {
-                "X" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::X),
-                "Y" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Y),
-                "Z" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Z),
-                "H" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::H),
-                "S" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::S),
-                "T" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::T),
-                "CNOT" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::CNOT),
-                "SWAP" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::SWAP),
-                "R2" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Rz(
-                    RotationObject::PiRational(Ratio::new(1, 2)),
-                )),
-                "R4" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Rz(
-                    RotationObject::PiRational(Ratio::new(1, 4)),
-                )),
-                "R8" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Rz(
-                    RotationObject::PiRational(Ratio::new(1, 8)),
-                )),
-                "R16" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Rz(
-                    RotationObject::PiRational(Ratio::new(1, 16)),
-                )),
-                "R32" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Rz(
-                    RotationObject::PiRational(Ratio::new(1, 32)),
-                )),
-                "R64" => BuilderCircuitObjectType::Unitary(UnitaryMatrixObject::Rz(
-                    RotationObject::PiRational(Ratio::new(1, 64)),
-                )),
-                "M" => BuilderCircuitObjectType::Measurement(MeasurementObject::Measurement),
-                "SM" => {
-                    BuilderCircuitObjectType::Measurement(MeasurementObject::StochasticMeasurement)
-                }
-                x => {
-                    return Err(CircuitError::new(format!("Unknown op: {}", x)));
-                }
-            };
-            Ok(res)
-        }
-
-        /// Turn a trie into a circuit optimizer with replacement rules.
-        pub fn make_circuit_optimizer_from_trie(
-            &self,
-            trie: OptimizerTrie<P>,
-        ) -> CircuitResult<MonteCarloOptimizer<BuilderCircuitObjectType<P>>> {
-            Ok(MonteCarloOptimizer::new(
-                self.make_subcircuit()?
-                    .into_iter()
-                    .map(|(indices, obj)| (indices, obj.object)),
-                trie,
-            ))
-        }
-
-        /// Turn a set of rules into a circuit optimizer.
-        pub fn make_circuit_optimizer<It, S>(
-            &self,
-            rules: It,
-        ) -> CircuitResult<MonteCarloOptimizer<BuilderCircuitObjectType<P>>>
-            where
-                S: AsRef<str>,
-                It: IntoIterator<Item=S>,
-        {
-            let trie = IndexTrie::new_from_lines(rules, Self::simple_map_strings)?;
-            self.make_circuit_optimizer_from_trie(trie)
-        }
-
-        /// Read a rules file and construct a circuit optimizer.
-        pub fn make_circuit_optimizer_from_file<S>(
-            &self,
-            filepath: S,
-        ) -> CircuitResult<MonteCarloOptimizer<BuilderCircuitObjectType<P>>>
-            where
-                S: AsRef<Path>,
-        {
-            let trie = IndexTrie::new_from_filepath(filepath, Self::simple_map_strings)?;
-            self.make_circuit_optimizer_from_trie(trie)
-        }
-
-        /// Apply the resulting optmized circuit to a qudit `r`.
-        pub fn apply_optimizer_circuit<It>(&mut self, r: Qudit, it: It) -> CircuitResult<Qudit>
-            where
-                It: IntoIterator<Item=(Vec<usize>, BuilderCircuitObjectType<P>)>,
-        {
-            it.into_iter().try_fold(
-                r,
-                |r, (indices, co): (Vec<usize>, BuilderCircuitObjectType<P>)| {
-                    let n = indices.len();
-                    match self.split_register_absolute(r, indices) {
-                        SplitResult::SELECTED(r) => {
-                            self.apply_circuit_object(r, BuilderCircuitObject { n, object: co })
-                        }
-                        SplitResult::UNSELECTED(r) => {
-                            self.apply_circuit_object(r, BuilderCircuitObject { n, object: co })
-                        }
-                        SplitResult::SPLIT(r, rem) => {
-                            let r = self
-                                .apply_circuit_object(r, BuilderCircuitObject { n, object: co })?;
-                            Ok(self.merge_two_registers(r, rem))
-                        }
-                    }
-                },
-            )
-        }
-    }
 }
